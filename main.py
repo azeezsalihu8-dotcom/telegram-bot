@@ -9,7 +9,7 @@ from telegram.ext import (
     filters,
 )
 
-BOT_TOKEN = os.environ.get("8735772930:AAFhqW6gp0WTPAC2my5oxeMH8MHfGxKYLbQ")
+BOT_TOKEN = os.environ.get(8735772930:AAFhqW6gp0WTPAC2my5oxeMH8MHfGxKYLbQ)
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 
 if not BOT_TOKEN:
