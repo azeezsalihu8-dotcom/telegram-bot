@@ -9,12 +9,14 @@ from telegram.ext import (
     filters,
 )
 
-BOT_TOKEN = os.environ.get(8735772930:AAFhqW6gp0WTPAC2my5oxeMH8MHfGxKYLbQ)
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
+# ---------------- ENV SAFETY ----------------
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN not set")
+    raise RuntimeError("BOT_TOKEN is missing in environment variables")
 
+# ---------------- APP SETUP ----------------
 app = FastAPI()
 bot = Bot(token=BOT_TOKEN)
 
@@ -22,42 +24,39 @@ application = Application.builder().token(BOT_TOKEN).build()
 
 
 # ---------------- COMMANDS ----------------
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
-        await update.message.reply_text("Yo 👋 Bot is live.")
+        await update.message.reply_text("Yo 👋 bot is live.")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         await update.message.reply_text(
             "/start - start bot\n"
             "/help - help menu\n"
-            "Send anything else and I’ll reply."
+            "Send any message to test bot"
         )
 
 
-# ---------------- MESSAGE HANDLER ----------------
-
-async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ---------------- NORMAL MESSAGE ----------------
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message and update.message.text:
-        await update.message.reply_text("Bot is alive 🔥")
+        await update.message.reply_text("Bot is working 🔥")
 
 
 # register handlers
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("help", help_command))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 
-# ---------------- WEBHOOK SETUP ----------------
-
+# ---------------- LIFECYCLE ----------------
 @app.on_event("startup")
-async def on_startup():
+async def startup():
     await application.initialize()
 
-    # set webhook only if URL exists
+    # set webhook only if provided
     if WEBHOOK_URL:
-        await application.bot.set_webhook(url=WEBHOOK_URL)
+        await application.bot.set_webhook(WEBHOOK_URL)
 
 
 @app.post("/")
@@ -72,4 +71,4 @@ async def webhook(req: Request):
 
 @app.get("/")
 async def home():
-    return "Bot is running"
+    return "Bot running"
