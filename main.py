@@ -23,6 +23,7 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 SECRET_KEY = "cookie75"
 DB_FILE = "database.json"
+REQUEST_COST = 0.05
 
 app = FastAPI()
 application = Application.builder().token(BOT_TOKEN).build()
@@ -54,40 +55,48 @@ def get_user(user_id):
     return db["users"][user_id]
 
 # ---------------- MENU ----------------
-def main_menu():
+def menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔓 Activate", callback_data="activate")],
         [InlineKeyboardButton("💰 Balance", callback_data="balance")],
         [InlineKeyboardButton("📖 Help", callback_data="help")],
-        [InlineKeyboardButton("📞 Support", url="https://t.me/tariq_jam75")]
     ])
 
 # ---------------- START ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    user = get_user(user_id)
-
-    text = "🔥 Welcome to the system"
-
-    if not user["activated"]:
-        text = "🚫 You are not activated yet.  Please contact @tariq_jam75 to recive activation code."
-
-    await update.message.reply_text(text, reply_markup=main_menu())
+    await update.message.reply_text(
+        "🔥 Welcome to the system\nUse /help to continue",
+        reply_markup=menu()
+    )
 
 # ---------------- HELP ----------------
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "📌 COMMANDS\n\n"
-        "/start - menu\n"
-        "/activate <code> - unlock access\n"
+        "📌 BOT GUIDE\n\n"
+        "/activate <code> - unlock bot\n"
         "/balance - check wallet\n"
-        "/code <key> - generate code\n"
+        "/add <amount> - top up wallet\n"
+        "/help - menu"
     )
 
 # ---------------- BALANCE ----------------
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = get_user(update.message.from_user.id)
-    await update.message.reply_text(f"💰 Balance: ${user['balance']}")
+    await update.message.reply_text(f"💰 Balance: ${round(user['balance'], 2)}")
+
+# ---------------- ADD BALANCE (MANUAL TOPUP) ----------------
+async def add_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Use /add <amount>")
+        return
+
+    amount = float(context.args[0])
+    user = get_user(update.message.from_user.id)
+
+    user["balance"] += amount
+    save_db(db)
+
+    await update.message.reply_text(f"💰 Added ${amount}")
 
 # ---------------- CODE GENERATOR ----------------
 async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -97,11 +106,7 @@ async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     new_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
 
-    db["codes"][new_code] = {
-        "used": False,
-        "user": None
-    }
-
+    db["codes"][new_code] = {"used": False, "user": None}
     save_db(db)
 
     await update.message.reply_text(f"CODE:\n{new_code}")
@@ -131,12 +136,30 @@ async def activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
 
     user["activated"] = True
-
     save_db(db)
 
     await update.message.reply_text("🔥 Activated successfully!")
 
-# ---------------- MENU BUTTONS ----------------
+# ---------------- MAIN HANDLER (WALLET SYSTEM) ----------------
+async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = get_user(update.message.from_user.id)
+
+    if not user["activated"]:
+        await update.message.reply_text("🚫 Activate first using /activate <code>")
+        return
+
+    if user["balance"] < REQUEST_COST:
+        await update.message.reply_text("💰 Low balance. Use /add <amount>")
+        return
+
+    user["balance"] -= REQUEST_COST
+    save_db(db)
+
+    await update.message.reply_text(
+        f"✔️ Done\n💸 Charged: ${REQUEST_COST}\n💰 Left: ${round(user['balance'], 2)}"
+    )
+
+# ---------------- BUTTONS ----------------
 async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -147,33 +170,22 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("Use /activate <code>")
 
     elif query.data == "balance":
-        await query.message.reply_text(f"💰 Balance: ${user['balance']}")
+        await query.message.reply_text(f"💰 Balance: ${round(user['balance'], 2)}")
 
     elif query.data == "help":
         await query.message.reply_text(
             "📌 HOW IT WORKS\n\n"
             "1. Get code\n"
             "2. Activate bot\n"
-            "3. Use features\n\n"
-            "/activate <code>\n"
-            "/balance\n"
+            "3. Add balance\n"
+            "4. Use bot\n"
         )
-
-# ---------------- MESSAGE HANDLER ----------------
-async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = get_user(update.message.from_user.id)
-
-    if not user["activated"]:
-        await update.message.reply_text("🚫 Activate first using /activate <code>")
-        return
-
-    # future wallet deduction hook (step 2 ready)
-    await update.message.reply_text("✔️ Working...")
 
 # ---------------- HANDLERS ----------------
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("help", help_cmd))
 application.add_handler(CommandHandler("balance", balance))
+application.add_handler(CommandHandler("add", add_balance))
 application.add_handler(CommandHandler("activate", activate))
 application.add_handler(CommandHandler("code", code))
 application.add_handler(CallbackQueryHandler(buttons))
@@ -188,7 +200,6 @@ async def startup():
     if WEBHOOK_URL:
         await application.bot.set_webhook(WEBHOOK_URL)
 
-# ---------------- SHUTDOWN ----------------
 @app.on_event("shutdown")
 async def shutdown():
     await application.stop()
