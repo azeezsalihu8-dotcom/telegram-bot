@@ -32,12 +32,12 @@ if not BOT_TOKEN:
 app = FastAPI()
 application = Application.builder().token(BOT_TOKEN).build()
 
-# ---------------- MEMORY DB ----------------
+# ---------------- MEMORY ----------------
 users = {}
 activation_codes = {}
 
 # ---------------- HELPERS ----------------
-def generate_code(length=8):
+def generate_code(length=10):
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
 def is_admin(user_id):
@@ -54,7 +54,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         users[user_id] = {"balance": 0, "active": False}
 
     await update.message.reply_text(
-        "Welcome.\nUse /activate <code> to unlock bot.Purchase code from @batnetworkb_f."
+        "Welcome.\nUse /activate <code> to unlock bot."
     )
 
 
@@ -99,7 +99,8 @@ async def activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Activated successfully 🔥")
 
 
-async def gen_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ---------------- ADMIN CODE GENERATOR (/code) ----------------
+async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
 
@@ -109,12 +110,13 @@ async def gen_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("No access ❌")
         return
 
-    code = generate_code()
-    activation_codes[code] = "valid"
+    new_code = generate_code()
+    activation_codes[new_code] = "valid"
 
-    await update.message.reply_text(f"Code: {code}")
+    await update.message.reply_text(f"CODE:\n{new_code}")
 
-# ---------------- MESSAGE HANDLER ----------------
+
+# ---------------- MAIN HANDLER ----------------
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
@@ -132,7 +134,8 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("Working ✔️")
 
-# ---------------- ERROR HANDLER ----------------
+
+# ---------------- ERROR ----------------
 async def error_handler(update, context):
     logger.error("Error:", exc_info=context.error)
 
@@ -140,7 +143,10 @@ async def error_handler(update, context):
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("balance", balance))
 application.add_handler(CommandHandler("activate", activate))
-application.add_handler(CommandHandler("gen", gen_code))
+
+# /code command (NEW)
+application.add_handler(CommandHandler("code", code))
+
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 application.add_error_handler(error_handler)
 
