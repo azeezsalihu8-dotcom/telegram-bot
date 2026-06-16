@@ -61,7 +61,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if user_id not in approved_users:
         await update.message.reply_text(
-            "🚫 You are not registered.",
+            "🚫 You are not registered. Please contact @tariq_jam75 to recive activation code.Send your id for approval as well.",
             reply_markup=main_menu()
         )
         return
