@@ -23,10 +23,15 @@ logger = logging.getLogger(__name__)
 # ---------------- ENV ----------------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-ADMIN_ID = os.getenv("ADMIN_ID")
+
+# 🔐 NEW: admin password (set this in Render)
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN missing")
+
+if not ADMIN_PASSWORD:
+    raise RuntimeError("ADMIN_PASSWORD missing")
 
 # ---------------- APP ----------------
 app = FastAPI()
@@ -40,8 +45,8 @@ activation_codes = {}
 def generate_code(length=10):
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
-def is_admin(user_id):
-    return ADMIN_ID and str(user_id) == str(ADMIN_ID)
+def is_authorized(password):
+    return password == ADMIN_PASSWORD
 
 # ---------------- COMMANDS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -54,7 +59,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         users[user_id] = {"balance": 0, "active": False}
 
     await update.message.reply_text(
-        "Welcome.\nUse /activate <code> to unlock bot. Purchase code from @batnetworkb_f."
+        "Welcome.\nUse /activate <code> to unlock bot."
     )
 
 
@@ -99,15 +104,19 @@ async def activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Activated successfully 🔥")
 
 
-# ---------------- ADMIN CODE GENERATOR (/code) ----------------
+# ---------------- NEW CODE GENERATOR ----------------
 async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
 
-    user_id = str(update.message.from_user.id)
+    if not context.args:
+        await update.message.reply_text("Use /code <password>")
+        return
 
-    if not is_admin(user_id):
-        await update.message.reply_text("No access ❌")
+    password = context.args[0]
+
+    if not is_authorized(password):
+        await update.message.reply_text("Wrong password ❌")
         return
 
     new_code = generate_code()
@@ -135,20 +144,12 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Working ✔️")
 
 
-# ---------------- ERROR ----------------
-async def error_handler(update, context):
-    logger.error("Error:", exc_info=context.error)
-
 # ---------------- HANDLERS ----------------
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("balance", balance))
 application.add_handler(CommandHandler("activate", activate))
-
-# /code command (NEW)
 application.add_handler(CommandHandler("code", code))
-
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
-application.add_error_handler(error_handler)
 
 # ---------------- STARTUP ----------------
 @app.on_event("startup")
