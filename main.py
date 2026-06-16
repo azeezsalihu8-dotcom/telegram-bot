@@ -41,7 +41,7 @@ def backup_db():
     except Exception as e:
         logging.error(f"Backup error: {e}")
 
-# ---------------- FILES ----------------
+# ---------------- FILE SAFE LOAD ----------------
 def load_json(file, default):
     if not os.path.exists(file):
         return default
@@ -52,8 +52,16 @@ def save_json(file, data):
     with open(file, "w") as f:
         json.dump(data, f, indent=2)
 
-db = load_json(DB_FILE, {"users": {}, "codes": {}})
+# SAFE INIT (FIXED)
+db = load_json(DB_FILE, {})
+if "users" not in db:
+    db["users"] = {}
+if "codes" not in db:
+    db["codes"] = {}
+
 phones = load_json(PHONE_FILE, {})
+if not isinstance(phones, dict):
+    phones = {}
 
 # ---------------- USER ----------------
 def get_user(user_id):
@@ -62,7 +70,7 @@ def get_user(user_id):
     if user_id not in db["users"]:
         db["users"][user_id] = {
             "activated": False,
-            "balance": 0.0,
+            "balance": 0.0
         }
         save_json(DB_FILE, db)
 
@@ -92,7 +100,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "💳 BTC ONLY:\n"
         "bc1qh0jqcxkez9hu33u66y6j03dw60gdazuqzw9e6q\n"
         "(Tap & hold to copy)\n\n"
-        "⚠️ Payment must be done within 1 hour\n\n"
+        "⚠️ Pay within 1 hour\n\n"
         "Commands:\n"
         "/activate <code>\n"
         "/balance\n"
@@ -105,8 +113,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📞 SUPPORT\n\n"
-        "@tariq_jam75\n"
-        "For payment or access issues"
+        "@tariq_jam75"
     )
 
 # ---------------- MY ID ----------------
@@ -161,20 +168,20 @@ async def activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Use /activate <code>")
         return
 
-    code = context.args[0]
+    code_val = context.args[0]
     user_id = str(update.message.from_user.id)
 
     user = get_user(user_id)
 
-    if code not in db["codes"]:
+    if code_val not in db["codes"]:
         await update.message.reply_text("❌ Invalid code")
         return
 
-    if db["codes"][code]["used"]:
+    if db["codes"][code_val]["used"]:
         await update.message.reply_text("❌ Code already used")
         return
 
-    db["codes"][code] = {"used": True, "user": user_id}
+    db["codes"][code_val] = {"used": True, "user": user_id}
     user["activated"] = True
 
     save_json(DB_FILE, db)
@@ -203,16 +210,21 @@ async def phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = phones[model]
 
+    if not isinstance(data, dict):
+        await update.message.reply_text("❌ Data error")
+        return
+
     lines = len(data)
     cost = lines * REQUEST_COST
 
-    if not is_owner and user["balance"] < cost:
-        await update.message.reply_text(
-            f"💰 Need ${round(cost, 2)} but you have ${round(user['balance'], 2)}"
-        )
-        return
-
+    # OWNER BYPASS PAYMENT
     if not is_owner:
+        if user["balance"] < cost:
+            await update.message.reply_text(
+                f"💰 Need ${round(cost, 2)} but you have ${round(user['balance'], 2)}"
+            )
+            return
+
         user["balance"] -= cost
         save_json(DB_FILE, db)
         backup_db()
@@ -222,14 +234,14 @@ async def phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for k, v in data.items():
         text += f"{k}: {v}\n"
 
-    text += "\n💳 Pay using BTC:\n"
+    text += "\n💳 BTC:\n"
     text += "bc1qh0jqcxkez9hu33u66y6j03dw60gdazuqzw9e6q\n"
     text += "(Tap & hold to copy)\n"
     text += "⚠️ Pay within 1 hour\n"
 
     await update.message.reply_text(text)
 
-# ---------------- BUTTONS ----------------
+# ---------------- BUTTONS (FIXED) ----------------
 async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -243,7 +255,15 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text(f"💰 Balance: ${round(user['balance'], 2)}")
 
     elif query.data == "help":
-        await help_cmd(update, context)
+        await query.message.reply_text(
+            "📦 SERVICE PLAN\n\n"
+            "🔓 Activation: FREE\n"
+            "💰 Price: $0.10 per line\n\n"
+            "💳 BTC ONLY:\n"
+            "bc1qh0jqcxkez9hu33u66y6j03dw60gdazuqzw9e6q\n"
+            "(Tap & hold to copy)\n\n"
+            "⚠️ Pay within 1 hour\n"
+        )
 
 # ---------------- HANDLERS ----------------
 application.add_handler(CommandHandler("start", start))
