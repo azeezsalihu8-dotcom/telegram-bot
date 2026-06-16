@@ -11,9 +11,7 @@ from telegram.ext import (
     Application,
     CommandHandler,
     CallbackQueryHandler,
-    MessageHandler,
     ContextTypes,
-    filters,
 )
 
 # ---------------- LOGGING ----------------
@@ -34,16 +32,16 @@ REQUEST_COST = 0.10
 app = FastAPI()
 application = Application.builder().token(BOT_TOKEN).build()
 
-# ---------------- AUTO BACKUP ----------------
+# ---------------- BACKUP ----------------
 def backup_db():
     try:
         if os.path.exists(DB_FILE):
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            shutil.copy(DB_FILE, f"backup_{timestamp}.json")
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            shutil.copy(DB_FILE, f"backup_{ts}.json")
     except Exception as e:
-        logging.error(f"Backup failed: {e}")
+        logging.error(f"Backup error: {e}")
 
-# ---------------- FILE HELPERS ----------------
+# ---------------- FILES ----------------
 def load_json(file, default):
     if not os.path.exists(file):
         return default
@@ -65,7 +63,6 @@ def get_user(user_id):
         db["users"][user_id] = {
             "activated": False,
             "balance": 0.0,
-            "used_codes": []
         }
         save_json(DB_FILE, db)
 
@@ -92,14 +89,24 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📦 SERVICE PLAN\n\n"
         "🔓 Activation: FREE\n"
         "💰 Price: $0.10 per line\n\n"
-        "💳 BTC:\n"
-        "bc1qh0jqcxkez9hu33u66y6j03dw60gdazuqzw9e6q\n\n"
-        "━━━━━━━━━━━━━━\n"
+        "💳 BTC ONLY:\n"
+        "bc1qh0jqcxkez9hu33u66y6j03dw60gdazuqzw9e6q\n"
+        "(Tap & hold to copy)\n\n"
+        "⚠️ Payment must be done within 1 hour\n\n"
         "Commands:\n"
         "/activate <code>\n"
         "/balance\n"
         "/phone <model>\n"
-        "/myid"
+        "/myid\n"
+        "/support"
+    )
+
+# ---------------- SUPPORT ----------------
+async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "📞 SUPPORT\n\n"
+        "@tariq_jam75\n"
+        "For payment or access issues"
     )
 
 # ---------------- MY ID ----------------
@@ -111,7 +118,7 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = get_user(update.message.from_user.id)
     await update.message.reply_text(f"💰 Balance: ${round(user['balance'], 2)}")
 
-# ---------------- OWNER: CODE ----------------
+# ---------------- OWNER CODE ----------------
 async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.from_user.id != OWNER_ID:
         return
@@ -128,7 +135,7 @@ async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(f"CODE:\n{new_code}")
 
-# ---------------- OWNER: CREDIT ----------------
+# ---------------- OWNER CREDIT ----------------
 async def credit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.from_user.id != OWNER_ID:
         return
@@ -146,7 +153,7 @@ async def credit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_json(DB_FILE, db)
     backup_db()
 
-    await update.message.reply_text(f"✅ Added ${amount} to {user_id}")
+    await update.message.reply_text(f"✅ Added ${amount}")
 
 # ---------------- ACTIVATE ----------------
 async def activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -173,13 +180,14 @@ async def activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_json(DB_FILE, db)
     backup_db()
 
-    await update.message.reply_text("🔥 Activated successfully!")
+    await update.message.reply_text("🔥 Activated!")
 
-# ---------------- PHONE SEARCH ----------------
+# ---------------- PHONE ----------------
 async def phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = get_user(update.message.from_user.id)
+    is_owner = update.message.from_user.id == OWNER_ID
 
-    if not user["activated"]:
+    if not user["activated"] and not is_owner:
         await update.message.reply_text("🚫 Activate first")
         return
 
@@ -198,22 +206,26 @@ async def phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines = len(data)
     cost = lines * REQUEST_COST
 
-    if user["balance"] < cost:
+    if not is_owner and user["balance"] < cost:
         await update.message.reply_text(
             f"💰 Need ${round(cost, 2)} but you have ${round(user['balance'], 2)}"
         )
         return
 
-    user["balance"] -= cost
-
-    save_json(DB_FILE, db)
-    backup_db()
+    if not is_owner:
+        user["balance"] -= cost
+        save_json(DB_FILE, db)
+        backup_db()
 
     text = f"📱 {model.upper()}\n\n"
+
     for k, v in data.items():
         text += f"{k}: {v}\n"
 
-    text += f"\n💸 Charged: ${round(cost, 2)}"
+    text += "\n💳 Pay using BTC:\n"
+    text += "bc1qh0jqcxkez9hu33u66y6j03dw60gdazuqzw9e6q\n"
+    text += "(Tap & hold to copy)\n"
+    text += "⚠️ Pay within 1 hour\n"
 
     await update.message.reply_text(text)
 
@@ -231,13 +243,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text(f"💰 Balance: ${round(user['balance'], 2)}")
 
     elif query.data == "help":
-        await query.message.reply_text(
-            "📦 SERVICE PLAN\n\n"
-            "🔓 Activation: FREE\n"
-            "💰 Price: $0.10 per line\n\n"
-            "💳 BTC:\n"
-            "bc1qh0jqcxkez9hu33u66y6j03dw60gdazuqzw9e6q\n"
-        )
+        await help_cmd(update, context)
 
 # ---------------- HANDLERS ----------------
 application.add_handler(CommandHandler("start", start))
@@ -248,6 +254,7 @@ application.add_handler(CommandHandler("code", code))
 application.add_handler(CommandHandler("credit", credit))
 application.add_handler(CommandHandler("phone", phone))
 application.add_handler(CommandHandler("myid", myid))
+application.add_handler(CommandHandler("support", support))
 application.add_handler(CallbackQueryHandler(buttons))
 
 # ---------------- STARTUP ----------------
