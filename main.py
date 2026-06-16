@@ -76,8 +76,12 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not context.args:
-        return
+    if not update.message:
+    return
+
+if not context.args:
+    await update.message.reply_text("Use /activate <code>")
+    return
 
     user_id = str(update.message.from_user.id)
     code = context.args[0]
@@ -105,7 +109,8 @@ async def gen_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
 
     if not is_admin(user_id):
-        return
+    await update.message.reply_text("No access ❌")
+    return
 
     code = generate_code()
     activation_codes[code] = "valid"
