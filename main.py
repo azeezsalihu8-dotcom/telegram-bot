@@ -3,20 +3,28 @@ import logging
 import random
 import string
 from fastapi import FastAPI, Request
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     ContextTypes,
     filters,
 )
+
+# ---------------- LOGGING ----------------
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
+
+logger = logging.getLogger(__name__)
 
 # ---------------- CONFIG ----------------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-# 🔐 secret access key (change this)
 SECRET_KEY = "cookie75"
 
 # ---------------- APP ----------------
@@ -35,43 +43,80 @@ def generate_code():
 def register(user_id):
     all_users.add(str(user_id))
 
+def main_menu():
+    keyboard = [
+        [InlineKeyboardButton("🔓 Activate", callback_data="activate")],
+        [InlineKeyboardButton("ℹ️ Instructions", callback_data="info")],
+        [InlineKeyboardButton("📞 Support", url="https://t.me/tariq_jam75")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
 # ---------------- START ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+
     user_id = str(update.message.from_user.id)
     register(user_id)
 
     if user_id not in approved_users:
         await update.message.reply_text(
-            "You are not registered. Please contact @tariq_jam75 to activate your account."
+            "🚫 You are not registered.\nContact support to get access.",
+            reply_markup=main_menu()
         )
         return
 
-    await update.message.reply_text("Welcome back 🔥")
+    await update.message.reply_text(
+        "🔥 Welcome back",
+        reply_markup=main_menu()
+    )
+
+# ---------------- CALLBACK BUTTONS ----------------
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    user_id = str(query.from_user.id)
+    register(user_id)
+
+    if query.data == "info":
+        await query.message.reply_text(
+            "📌 HOW IT WORKS:\n\n"
+            "1. Get approved\n"
+            "2. Use /activate <code>\n"
+            "3. Start using bot",
+            reply_markup=main_menu()
+        )
+
+    elif query.data == "activate":
+        await query.message.reply_text(
+            "Send:\n/activate <your_code>",
+            reply_markup=main_menu()
+        )
 
 # ---------------- MESSAGE ----------------
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+
     user_id = str(update.message.from_user.id)
     register(user_id)
 
     if user_id not in approved_users:
         await update.message.reply_text(
-            "You are not registered. Please contact @tariq_jam75 to activate your account."
+            "🚫 Not registered. Contact support.",
+            reply_markup=main_menu()
         )
         return
 
-    await update.message.reply_text("Working ✔️")
+    await update.message.reply_text("✔️ Working...")
 
-# ---------------- GENERATE CODE ----------------
+# ---------------- CODE GENERATOR ----------------
 async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.message.from_user.id)
-
-    if not context.args:
-        await update.message.reply_text("Use /code <key>")
+    if not update.message:
         return
 
-    key = context.args[0]
-
-    if key != SECRET_KEY:
+    if not context.args or context.args[0] != SECRET_KEY:
         await update.message.reply_text("Wrong key ❌")
         return
 
@@ -82,7 +127,8 @@ async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------------- APPROVE USER ----------------
 async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.message.from_user.id)
+    if not update.message:
+        return
 
     if not context.args:
         await update.message.reply_text("Use /approve <user_id>")
@@ -93,24 +139,37 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(f"Approved {target} ✔️")
 
-# ---------------- USER LIST ----------------
-async def users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not all_users:
-        await update.message.reply_text("No users yet.")
+# ---------------- ACTIVATE ----------------
+async def activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
         return
 
-    text = "📋 USERS:\n\n"
-    for u in all_users:
-        status = "✅" if u in approved_users else "❌"
-        text += f"{u} {status}\n"
+    if not context.args:
+        await update.message.reply_text("Use /activate <code>")
+        return
 
-    await update.message.reply_text(text)
+    code = context.args[0]
+
+    if code not in activation_codes:
+        await update.message.reply_text("Invalid code ❌")
+        return
+
+    if activation_codes[code] == "used":
+        await update.message.reply_text("Already used ❌")
+        return
+
+    user_id = str(update.message.from_user.id)
+    approved_users.add(user_id)
+    activation_codes[code] = "used"
+
+    await update.message.reply_text("🔥 Activated successfully!")
 
 # ---------------- HANDLERS ----------------
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("code", code))
 application.add_handler(CommandHandler("approve", approve))
-application.add_handler(CommandHandler("users", users_list))
+application.add_handler(CommandHandler("activate", activate))
+application.add_handler(CallbackQueryHandler(button_handler))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 
 # ---------------- STARTUP ----------------
@@ -136,11 +195,7 @@ async def webhook(req: Request):
     await application.process_update(update)
     return {"ok": True}
 
-# ---------------- HEALTH ----------------
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
-
+# ---------------- HOME ----------------
 @app.get("/")
 async def home():
     return {"bot": "running"}
