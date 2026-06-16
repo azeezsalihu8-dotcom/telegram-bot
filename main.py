@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 # ---------------- ENV ----------------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-ADMIN_ID = os.getenv("ADMIN_ID")  # your Telegram ID
+ADMIN_ID = os.getenv("ADMIN_ID")
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN missing")
@@ -51,10 +51,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
 
     if user_id not in users:
-        users[user_id] = {
-            "balance": 0,
-            "active": False
-        }
+        users[user_id] = {"balance": 0, "active": False}
 
     await update.message.reply_text(
         "Welcome.\nUse /activate <code> to unlock bot."
@@ -77,11 +74,11 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
-    return
+        return
 
-if not context.args:
-    await update.message.reply_text("Use /activate <code>")
-    return
+    if not context.args:
+        await update.message.reply_text("Use /activate <code>")
+        return
 
     user_id = str(update.message.from_user.id)
     code = context.args[0]
@@ -109,16 +106,15 @@ async def gen_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
 
     if not is_admin(user_id):
-    await update.message.reply_text("No access ❌")
-    return
+        await update.message.reply_text("No access ❌")
+        return
 
     code = generate_code()
     activation_codes[code] = "valid"
 
     await update.message.reply_text(f"Code: {code}")
 
-
-# ---------------- MAIN HANDLER ----------------
+# ---------------- MESSAGE HANDLER ----------------
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
@@ -134,11 +130,9 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Activate bot first using /activate <code>")
         return
 
-    # your real bot logic goes here
     await update.message.reply_text("Working ✔️")
 
-
-# ---------------- ERROR ----------------
+# ---------------- ERROR HANDLER ----------------
 async def error_handler(update, context):
     logger.error("Error:", exc_info=context.error)
 
