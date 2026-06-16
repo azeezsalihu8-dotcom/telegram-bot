@@ -54,8 +54,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         users[user_id] = {"balance": 0, "active": False}
 
     await update.message.reply_text(
-        "Welcome.\nUse /activate <code> to unlock bot.
-Purchase code from @batnetworkb_f."
+        "Welcome.\nUse /activate <code> to unlock bot. Purchase code from @batnetworkb_f."
     )
 
 
