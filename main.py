@@ -27,13 +27,13 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 SECRET_KEY = "cookie75"
 
-# ---------------- APP ----------------
 app = FastAPI()
 application = Application.builder().token(BOT_TOKEN).build()
 
 # ---------------- MEMORY ----------------
 approved_users = set()
 all_users = set()
+pending_users = set()
 activation_codes = {}
 
 # ---------------- HELPERS ----------------
@@ -45,8 +45,8 @@ def register(user_id):
 
 def main_menu():
     keyboard = [
-        [InlineKeyboardButton("🔓 Activate", callback_data="activate")],
-        [InlineKeyboardButton("ℹ️ Instructions", callback_data="info")],
+        [InlineKeyboardButton("🔓 Request Access", callback_data="request")],
+        [InlineKeyboardButton("ℹ️ Why ID?", callback_data="whyid")],
         [InlineKeyboardButton("📞 Support", url="https://t.me/tariq_jam75")],
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -61,17 +61,27 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if user_id not in approved_users:
         await update.message.reply_text(
-            "🚫 You are not registered.\nContact support to get access.",
+            "🚫 You are not registered.",
             reply_markup=main_menu()
         )
         return
 
+    await update.message.reply_text("🔥 Welcome back")
+
+# ---------------- ID COMMAND ----------------
+async def myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+
+    user_id = str(update.message.from_user.id)
+
     await update.message.reply_text(
-        "🔥 Welcome back",
-        reply_markup=main_menu()
+        f"👤 Your Telegram ID:\n{user_id}\n\n"
+        "This ID is used so the system knows exactly who you are.\n"
+        "Without it, we cannot approve or track your access."
     )
 
-# ---------------- CALLBACK BUTTONS ----------------
+# ---------------- BUTTONS ----------------
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -79,37 +89,50 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(query.from_user.id)
     register(user_id)
 
-    if query.data == "info":
+    # request access
+    if query.data == "request":
+        pending_users.add(user_id)
+
         await query.message.reply_text(
-            "📌 HOW IT WORKS:\n\n"
-            "1. Get approved\n"
-            "2. Use /activate <code>\n"
-            "3. Start using bot",
+            "📩 Request sent.\n"
+            "Wait for admin approval.\n\n"
+            f"Your ID: {user_id}\n"
+            "Send this ID if needed for verification.",
             reply_markup=main_menu()
         )
 
-    elif query.data == "activate":
+    # explain ID
+    elif query.data == "whyid":
         await query.message.reply_text(
-            "Send:\n/activate <your_code>",
+            "📌 WHY WE NEED YOUR ID\n\n"
+            "Every Telegram user has a unique ID.\n"
+            "We use it to:\n"
+            "- identify your account\n"
+            "- give access correctly\n"
+            "- prevent fake accounts\n\n"
+            "Without ID, we cannot approve you.",
             reply_markup=main_menu()
         )
 
-# ---------------- MESSAGE ----------------
-async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ---------------- AUTO APPROVE (ADMIN ONLY BUTTON FLOW) ----------------
+async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
 
     user_id = str(update.message.from_user.id)
-    register(user_id)
 
-    if user_id not in approved_users:
-        await update.message.reply_text(
-            "🚫 Not registered. Contact support.",
-            reply_markup=main_menu()
-        )
+    # simple admin lock (you can keep or remove later)
+    if not context.args:
+        await update.message.reply_text("Use /approve <user_id>")
         return
 
-    await update.message.reply_text("✔️ Working...")
+    target = context.args[0]
+    approved_users.add(target)
+
+    if target in pending_users:
+        pending_users.remove(target)
+
+    await update.message.reply_text(f"Approved {target} ✔️")
 
 # ---------------- CODE GENERATOR ----------------
 async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -124,20 +147,6 @@ async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     activation_codes[new_code] = "valid"
 
     await update.message.reply_text(f"CODE:\n{new_code}")
-
-# ---------------- APPROVE USER ----------------
-async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message:
-        return
-
-    if not context.args:
-        await update.message.reply_text("Use /approve <user_id>")
-        return
-
-    target = context.args[0]
-    approved_users.add(target)
-
-    await update.message.reply_text(f"Approved {target} ✔️")
 
 # ---------------- ACTIVATE ----------------
 async def activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -166,11 +175,11 @@ async def activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------------- HANDLERS ----------------
 application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("code", code))
+application.add_handler(CommandHandler("myid", myid))
 application.add_handler(CommandHandler("approve", approve))
+application.add_handler(CommandHandler("code", code))
 application.add_handler(CommandHandler("activate", activate))
 application.add_handler(CallbackQueryHandler(button_handler))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 
 # ---------------- STARTUP ----------------
 @app.on_event("startup")
@@ -181,7 +190,6 @@ async def startup():
     if WEBHOOK_URL:
         await application.bot.set_webhook(WEBHOOK_URL)
 
-# ---------------- SHUTDOWN ----------------
 @app.on_event("shutdown")
 async def shutdown():
     await application.stop()
