@@ -1,185 +1,183 @@
 import os
-import logging
+import json
 import random
 import string
+import logging
 from fastapi import FastAPI, Request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
-    MessageHandler,
     CallbackQueryHandler,
+    MessageHandler,
     ContextTypes,
     filters,
 )
 
 # ---------------- LOGGING ----------------
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
-)
-
-logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 # ---------------- CONFIG ----------------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 SECRET_KEY = "cookie75"
+DB_FILE = "database.json"
 
 app = FastAPI()
 application = Application.builder().token(BOT_TOKEN).build()
 
-# ---------------- MEMORY ----------------
-approved_users = set()
-all_users = set()
-pending_users = set()
-activation_codes = {}
+# ---------------- DATABASE ----------------
+def load_db():
+    if not os.path.exists(DB_FILE):
+        return {"users": {}, "codes": {}}
+    with open(DB_FILE, "r") as f:
+        return json.load(f)
 
-# ---------------- HELPERS ----------------
-def generate_code():
-    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
+def save_db(db):
+    with open(DB_FILE, "w") as f:
+        json.dump(db, f, indent=2)
 
-def register(user_id):
-    all_users.add(str(user_id))
+db = load_db()
 
+def get_user(user_id):
+    user_id = str(user_id)
+
+    if user_id not in db["users"]:
+        db["users"][user_id] = {
+            "activated": False,
+            "balance": 0.0,
+            "used_codes": []
+        }
+        save_db(db)
+
+    return db["users"][user_id]
+
+# ---------------- MENU ----------------
 def main_menu():
-    keyboard = [
-        [InlineKeyboardButton("🔓 Request Access", callback_data="request")],
-        [InlineKeyboardButton("ℹ️ Why ID?", callback_data="whyid")],
-        [InlineKeyboardButton("📞 Support", url="https://t.me/tariq_jam75")],
-    ]
-    return InlineKeyboardMarkup(keyboard)
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔓 Activate", callback_data="activate")],
+        [InlineKeyboardButton("💰 Balance", callback_data="balance")],
+        [InlineKeyboardButton("📖 Help", callback_data="help")],
+        [InlineKeyboardButton("📞 Support", url="https://t.me/tariq_jam75")]
+    ])
 
 # ---------------- START ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message:
-        return
+    user_id = update.message.from_user.id
+    user = get_user(user_id)
 
-    user_id = str(update.message.from_user.id)
-    register(user_id)
+    text = "🔥 Welcome to the system"
 
-    if user_id not in approved_users:
-        await update.message.reply_text(
-            "🚫 You are not registered. Please contact @tariq_jam75 to recive activation code.Send your id for approval as well.",
-            reply_markup=main_menu()
-        )
-        return
+    if not user["activated"]:
+        text = "🚫 You are not activated yet.  Please contact @tariq_jam75 to recive activation code."
 
-    await update.message.reply_text("🔥 Welcome back")
+    await update.message.reply_text(text, reply_markup=main_menu())
 
-# ---------------- ID COMMAND ----------------
-async def myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message:
-        return
-
-    user_id = str(update.message.from_user.id)
-
+# ---------------- HELP ----------------
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        f"👤 Your Telegram ID:\n{user_id}\n\n"
-        "This ID is used so the system knows exactly who you are.\n"
-        "Without it, we cannot approve or track your access."
+        "📌 COMMANDS\n\n"
+        "/start - menu\n"
+        "/activate <code> - unlock access\n"
+        "/balance - check wallet\n"
+        "/code <key> - generate code\n"
     )
 
-# ---------------- BUTTONS ----------------
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    user_id = str(query.from_user.id)
-    register(user_id)
-
-    # request access
-    if query.data == "request":
-        pending_users.add(user_id)
-
-        await query.message.reply_text(
-            "📩 Request sent.\n"
-            "Wait for admin approval.\n\n"
-            f"Your ID: {user_id}\n"
-            "Send this ID if needed for verification.",
-            reply_markup=main_menu()
-        )
-
-    # explain ID
-    elif query.data == "whyid":
-        await query.message.reply_text(
-            "📌 WHY WE NEED YOUR ID\n\n"
-            "Every Telegram user has a unique ID.\n"
-            "We use it to:\n"
-            "- identify your account\n"
-            "- give access correctly\n"
-            "- prevent fake accounts\n\n"
-            "Without ID, we cannot approve you.",
-            reply_markup=main_menu()
-        )
-
-# ---------------- AUTO APPROVE (ADMIN ONLY BUTTON FLOW) ----------------
-async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message:
-        return
-
-    user_id = str(update.message.from_user.id)
-
-    # simple admin lock (you can keep or remove later)
-    if not context.args:
-        await update.message.reply_text("Use /approve <user_id>")
-        return
-
-    target = context.args[0]
-    approved_users.add(target)
-
-    if target in pending_users:
-        pending_users.remove(target)
-
-    await update.message.reply_text(f"Approved {target} ✔️")
+# ---------------- BALANCE ----------------
+async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = get_user(update.message.from_user.id)
+    await update.message.reply_text(f"💰 Balance: ${user['balance']}")
 
 # ---------------- CODE GENERATOR ----------------
 async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message:
-        return
-
     if not context.args or context.args[0] != SECRET_KEY:
-        await update.message.reply_text("Wrong key ❌")
+        await update.message.reply_text("❌ Wrong key")
         return
 
-    new_code = generate_code()
-    activation_codes[new_code] = "valid"
+    new_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
+
+    db["codes"][new_code] = {
+        "used": False,
+        "user": None
+    }
+
+    save_db(db)
 
     await update.message.reply_text(f"CODE:\n{new_code}")
 
 # ---------------- ACTIVATE ----------------
 async def activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message:
-        return
-
     if not context.args:
         await update.message.reply_text("Use /activate <code>")
         return
 
     code = context.args[0]
-
-    if code not in activation_codes:
-        await update.message.reply_text("Invalid code ❌")
-        return
-
-    if activation_codes[code] == "used":
-        await update.message.reply_text("Already used ❌")
-        return
-
     user_id = str(update.message.from_user.id)
-    approved_users.add(user_id)
-    activation_codes[code] = "used"
+
+    user = get_user(user_id)
+
+    if code not in db["codes"]:
+        await update.message.reply_text("❌ Invalid code")
+        return
+
+    if db["codes"][code]["used"]:
+        await update.message.reply_text("❌ Code already used")
+        return
+
+    db["codes"][code] = {
+        "used": True,
+        "user": user_id
+    }
+
+    user["activated"] = True
+
+    save_db(db)
 
     await update.message.reply_text("🔥 Activated successfully!")
 
+# ---------------- MENU BUTTONS ----------------
+async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    user = get_user(query.from_user.id)
+
+    if query.data == "activate":
+        await query.message.reply_text("Use /activate <code>")
+
+    elif query.data == "balance":
+        await query.message.reply_text(f"💰 Balance: ${user['balance']}")
+
+    elif query.data == "help":
+        await query.message.reply_text(
+            "📌 HOW IT WORKS\n\n"
+            "1. Get code\n"
+            "2. Activate bot\n"
+            "3. Use features\n\n"
+            "/activate <code>\n"
+            "/balance\n"
+        )
+
+# ---------------- MESSAGE HANDLER ----------------
+async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = get_user(update.message.from_user.id)
+
+    if not user["activated"]:
+        await update.message.reply_text("🚫 Activate first using /activate <code>")
+        return
+
+    # future wallet deduction hook (step 2 ready)
+    await update.message.reply_text("✔️ Working...")
+
 # ---------------- HANDLERS ----------------
 application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("myid", myid))
-application.add_handler(CommandHandler("approve", approve))
-application.add_handler(CommandHandler("code", code))
+application.add_handler(CommandHandler("help", help_cmd))
+application.add_handler(CommandHandler("balance", balance))
 application.add_handler(CommandHandler("activate", activate))
-application.add_handler(CallbackQueryHandler(button_handler))
+application.add_handler(CommandHandler("code", code))
+application.add_handler(CallbackQueryHandler(buttons))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 
 # ---------------- STARTUP ----------------
 @app.on_event("startup")
@@ -190,6 +188,7 @@ async def startup():
     if WEBHOOK_URL:
         await application.bot.set_webhook(WEBHOOK_URL)
 
+# ---------------- SHUTDOWN ----------------
 @app.on_event("shutdown")
 async def shutdown():
     await application.stop()
@@ -206,4 +205,4 @@ async def webhook(req: Request):
 # ---------------- HOME ----------------
 @app.get("/")
 async def home():
-    return {"bot": "running"}
+    return {"status": "running"}
