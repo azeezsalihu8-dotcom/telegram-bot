@@ -1,9 +1,9 @@
 {
-  "iphone 14": {
-    "price": "$500-$550",
-    "ram": "6GB",
+  "iphone 11": {
+    "price": "$135-$200",
+    "ram": "128GB",
     "battery": "3279mAh",
     "issues": "Battery wear",
-    "alternative": "iPhone 13"
+    "alternative": "iPhone 14"
   }
 }
