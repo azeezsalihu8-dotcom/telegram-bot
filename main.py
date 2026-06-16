@@ -3,6 +3,8 @@ import json
 import random
 import string
 import logging
+import shutil
+from datetime import datetime
 from fastapi import FastAPI, Request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -32,7 +34,16 @@ REQUEST_COST = 0.10
 app = FastAPI()
 application = Application.builder().token(BOT_TOKEN).build()
 
-# ---------------- LOAD FILES ----------------
+# ---------------- AUTO BACKUP ----------------
+def backup_db():
+    try:
+        if os.path.exists(DB_FILE):
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            shutil.copy(DB_FILE, f"backup_{timestamp}.json")
+    except Exception as e:
+        logging.error(f"Backup failed: {e}")
+
+# ---------------- FILE HELPERS ----------------
 def load_json(file, default):
     if not os.path.exists(file):
         return default
@@ -71,7 +82,7 @@ def menu():
 # ---------------- START ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🔥 Welcome to Data Bot\nUse /help",
+        "🔥 Welcome\nUse /help",
         reply_markup=menu()
     )
 
@@ -100,7 +111,7 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = get_user(update.message.from_user.id)
     await update.message.reply_text(f"💰 Balance: ${round(user['balance'], 2)}")
 
-# ---------------- OWNER: CODE GENERATOR ----------------
+# ---------------- OWNER: CODE ----------------
 async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.from_user.id != OWNER_ID:
         return
@@ -113,6 +124,7 @@ async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     db["codes"][new_code] = {"used": False, "user": None}
     save_json(DB_FILE, db)
+    backup_db()
 
     await update.message.reply_text(f"CODE:\n{new_code}")
 
@@ -132,6 +144,7 @@ async def credit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user["balance"] += amount
 
     save_json(DB_FILE, db)
+    backup_db()
 
     await update.message.reply_text(f"✅ Added ${amount} to {user_id}")
 
@@ -158,6 +171,7 @@ async def activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user["activated"] = True
 
     save_json(DB_FILE, db)
+    backup_db()
 
     await update.message.reply_text("🔥 Activated successfully!")
 
@@ -181,7 +195,6 @@ async def phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = phones[model]
 
-    # count lines
     lines = len(data)
     cost = lines * REQUEST_COST
 
@@ -192,7 +205,9 @@ async def phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     user["balance"] -= cost
+
     save_json(DB_FILE, db)
+    backup_db()
 
     text = f"📱 {model.upper()}\n\n"
     for k, v in data.items():
@@ -210,13 +225,19 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = get_user(query.from_user.id)
 
     if query.data == "activate":
-        await query.message.reply_text("/activate <code>")
+        await query.message.reply_text("Use /activate <code>")
 
     elif query.data == "balance":
         await query.message.reply_text(f"💰 Balance: ${round(user['balance'], 2)}")
 
     elif query.data == "help":
-        await help_cmd(update, context)
+        await query.message.reply_text(
+            "📦 SERVICE PLAN\n\n"
+            "🔓 Activation: FREE\n"
+            "💰 Price: $0.10 per line\n\n"
+            "💳 BTC:\n"
+            "bc1qh0jqcxkez9hu33u66y6j03dw60gdazuqzw9e6q\n"
+        )
 
 # ---------------- HANDLERS ----------------
 application.add_handler(CommandHandler("start", start))
