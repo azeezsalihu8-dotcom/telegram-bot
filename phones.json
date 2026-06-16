@@ -1,0 +1,9 @@
+{
+  "iphone 14": {
+    "price": "$500-$550",
+    "ram": "6GB",
+    "battery": "3279mAh",
+    "issues": "Battery wear",
+    "alternative": "iPhone 13"
+  }
+}
