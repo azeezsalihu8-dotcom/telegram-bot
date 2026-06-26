@@ -99,7 +99,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "💰 Price: $0.10 per line\n\n"
         "💳 BTC ONLY:\n"
         "bc1qh0jqcxkez9hu33u66y6j03dw60gdazuqzw9e6q\n"
-        "(Tap & hold to copy)\n\n"
+        "(Copy)\n\n"
         "⚠️ Pay within 1 hour\n\n"
         "Commands:\n"
         "/activate <code>\n"
