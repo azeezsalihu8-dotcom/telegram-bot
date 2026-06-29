@@ -211,7 +211,7 @@ def menu():
 
                 InlineKeyboardButton(
 
-                    "📝 Get Poem",
+                    "📝 Get Bin",
 
                     callback_data="menu_poem"
 
@@ -257,9 +257,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
 
-        "🎭 Welcome to the Poetry Slam Bot.\n\n"
+        "🎭 Welcome to the Cookie Bin Bot.\n\n"
 
-        "Every poem is charged based on the number of lines.\n\n"
+        "Every Bin is charged based on the number of lines.\n\n"
 
         "Choose an option below.",
 
@@ -278,7 +278,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         "/balance\n"
 
-        "/poetry\n\n"
+        "/Bin\n\n"
 
         "1 credit = 1 line."
 
@@ -307,12 +307,12 @@ def category_menu():
             [
 
                 InlineKeyboardButton(
-                    "❤️ Love",
+                    "Buy_Bin",
                     callback_data="love"
                 ),
 
                 InlineKeyboardButton(
-                    "💔 Sad",
+                    "Buy_Bin2",
                     callback_data="sad"
                 )
 
@@ -321,12 +321,12 @@ def category_menu():
             [
 
                 InlineKeyboardButton(
-                    "💪 Motivation",
+                    "Buy_Bin3",
                     callback_data="motivation"
                 ),
 
                 InlineKeyboardButton(
-                    "🤝 Friendship",
+                    "Buy_Bin4",
                     callback_data="friendship"
                 )
 
@@ -462,7 +462,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             "📖 Commands\n\n"
 
-            "/poetry\n"
+            "/Bin\n"
 
             "/balance\n\n"
 
@@ -472,13 +472,13 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data in (
 
-        "love",
+        "Buy_Bin",
 
-        "sad",
+        "Buy_Bin2",
 
-        "motivation",
+        "Buy_Bin3",
 
-        "friendship"
+        "Buy_Bin4"
 
     ):
 
