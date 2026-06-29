@@ -1,305 +1,641 @@
 import os
 import json
 import random
-import string
 import logging
 import shutil
+
 from datetime import datetime
 from fastapi import FastAPI, Request
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
+
 from telegram.ext import (
     Application,
     CommandHandler,
     CallbackQueryHandler,
+    MessageHandler,
     ContextTypes,
+    filters,
 )
 
-# ---------------- LOGGING ----------------
-logging.basicConfig(level=logging.INFO)
+# =====================================================
+# LOGGING
+# =====================================================
 
-# ---------------- CONFIG ----------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
+)
+
+# =====================================================
+# CONFIG
+# =====================================================
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 OWNER_ID = 7874825323
-SECRET_KEY = "cookie75"
 
-DB_FILE = "database.json"
-PHONE_FILE = "phones.json"
+DB_FILE = "poetry_database.json"
 
-REQUEST_COST = 0.10
+POEMS_FOLDER = "poems"
+
+LINE_COST = 1
+
+# =====================================================
+# FASTAPI
+# =====================================================
 
 app = FastAPI()
-application = Application.builder().token(BOT_TOKEN).build()
 
-# ---------------- BACKUP ----------------
+application = (
+    Application.builder()
+    .token(BOT_TOKEN)
+    .build()
+)
+
+# =====================================================
+# DATABASE
+# =====================================================
+
 def backup_db():
-    try:
-        if os.path.exists(DB_FILE):
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            shutil.copy(DB_FILE, f"backup_{ts}.json")
-    except Exception as e:
-        logging.error(f"Backup error: {e}")
 
-# ---------------- FILE SAFE LOAD ----------------
+    try:
+
+        if os.path.exists(DB_FILE):
+
+            name = datetime.now().strftime(
+                "backup_%Y%m%d_%H%M%S.json"
+            )
+
+            shutil.copy(DB_FILE, name)
+
+    except Exception as e:
+
+        logging.error(e)
+
+
 def load_json(file, default):
+
     if not os.path.exists(file):
+
         return default
-    with open(file, "r") as f:
+
+    with open(file, "r", encoding="utf-8") as f:
+
         return json.load(f)
 
+
 def save_json(file, data):
-    with open(file, "w") as f:
-        json.dump(data, f, indent=2)
 
-# SAFE INIT (FIXED)
-db = load_json(DB_FILE, {})
-if "users" not in db:
-    db["users"] = {}
-if "codes" not in db:
-    db["codes"] = {}
+    with open(file, "w", encoding="utf-8") as f:
 
-phones = load_json(PHONE_FILE, {})
-if not isinstance(phones, dict):
-    phones = {}
+        json.dump(
+            data,
+            f,
+            indent=4
+        )
 
-# ---------------- USER ----------------
+
+db = load_json(
+
+    DB_FILE,
+
+    {
+
+        "users": {}
+
+    }
+
+)
+
+# =====================================================
+# USER
+# =====================================================
+
 def get_user(user_id):
+
     user_id = str(user_id)
 
     if user_id not in db["users"]:
+
         db["users"][user_id] = {
-            "activated": False,
-            "balance": 0.0
+
+            "balance": 0,
+
+            "transactions": []
+
         }
+
         save_json(DB_FILE, db)
 
     return db["users"][user_id]
 
-# ---------------- MENU ----------------
+# =====================================================
+# POEM READER
+# =====================================================
+
+def read_poems(category):
+
+    path = os.path.join(
+
+        POEMS_FOLDER,
+
+        f"{category}.txt"
+
+    )
+
+    if not os.path.exists(path):
+
+        return []
+
+    with open(path, "r", encoding="utf-8") as f:
+
+        text = f.read()
+
+    poems = [
+
+        poem.strip()
+
+        for poem in text.split("===")
+
+        if poem.strip()
+
+    ]
+
+    return poems
+
+
+def random_poem(category):
+
+    poems = read_poems(category)
+
+    if not poems:
+
+        return None
+
+    return random.choice(poems)
+
+
+def poem_lines(poem):
+
+    return len(
+
+        [
+
+            line
+
+            for line in poem.splitlines()
+
+            if line.strip()
+
+        ]
+
+    )
+
+# =====================================================
+# MENU
+# =====================================================
+
 def menu():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔓 Activate", callback_data="activate")],
-        [InlineKeyboardButton("💰 Balance", callback_data="balance")],
-        [InlineKeyboardButton("📖 Help", callback_data="help")]
-    ])
 
-# ---------------- START ----------------
+    return InlineKeyboardMarkup(
+
+        [
+
+            [
+
+                InlineKeyboardButton(
+
+                    "📝 Get Poem",
+
+                    callback_data="menu_poem"
+
+                )
+
+            ],
+
+            [
+
+                InlineKeyboardButton(
+
+                    "💰 Balance",
+
+                    callback_data="menu_balance"
+
+                )
+
+            ],
+
+            [
+
+                InlineKeyboardButton(
+
+                    "📖 Help",
+
+                    callback_data="menu_help"
+
+                )
+
+            ]
+
+        ]
+
+    )
+
+# =====================================================
+# COMMANDS
+# =====================================================
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    get_user(update.effective_user.id)
+
     await update.message.reply_text(
-        "🔥 Welcome\nUse /help",
+
+        "🎭 Welcome to the Poetry Slam Bot.\n\n"
+
+        "Every poem is charged based on the number of lines.\n\n"
+
+        "Choose an option below.",
+
         reply_markup=menu()
+
     )
 
-# ---------------- HELP ----------------
+
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     await update.message.reply_text(
-        "📦 SERVICE PLAN\n\n"
-        "🔓 Activation: FREE\n"
-        "💰 Price: $0.10 per line\n\n"
-        "💳 BTC ONLY:\n"
-        "bc1qh0jqcxkez9hu33u66y6j03dw60gdazuqzw9e6q\n"
-        "(Copy)\n\n"
-        "⚠️ Pay within 1 hour\n\n"
-        "Commands:\n"
-        "/activate <code>\n"
+
+        "📖 Commands\n\n"
+
+        "/start\n"
+
         "/balance\n"
-        "/phone <model>\n"
-        "/myid\n"
-        "/support"
+
+        "/poetry\n\n"
+
+        "1 credit = 1 line."
+
     )
 
-# ---------------- SUPPORT ----------------
-async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "📞 SUPPORT\n\n"
-        "@tariq_jam75"
-    )
 
-# ---------------- MY ID ----------------
-async def myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"🆔 {update.message.from_user.id}")
-
-# ---------------- BALANCE ----------------
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = get_user(update.message.from_user.id)
-    await update.message.reply_text(f"💰 Balance: ${round(user['balance'], 2)}")
 
-# ---------------- OWNER CODE ----------------
-async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.from_user.id != OWNER_ID:
+    user = get_user(update.effective_user.id)
+
+    await update.message.reply_text(
+
+        f"💰 Balance: {user['balance']} credits"
+
+    )
+# =====================================================
+# CATEGORY KEYBOARD
+# =====================================================
+
+def category_menu():
+
+    return InlineKeyboardMarkup(
+
+        [
+
+            [
+
+                InlineKeyboardButton(
+                    "❤️ Love",
+                    callback_data="love"
+                ),
+
+                InlineKeyboardButton(
+                    "💔 Sad",
+                    callback_data="sad"
+                )
+
+            ],
+
+            [
+
+                InlineKeyboardButton(
+                    "💪 Motivation",
+                    callback_data="motivation"
+                ),
+
+                InlineKeyboardButton(
+                    "🤝 Friendship",
+                    callback_data="friendship"
+                )
+
+            ]
+
+        ]
+
+    )
+
+
+# =====================================================
+# SEND RANDOM POEM
+# =====================================================
+
+async def send_poem(query, category):
+
+    poem = random_poem(category)
+
+    if poem is None:
+
+        await query.message.reply_text(
+
+            "❌ No poems found in this category."
+
+        )
+
         return
-
-    if not context.args or context.args[0] != SECRET_KEY:
-        await update.message.reply_text("❌ Wrong key")
-        return
-
-    new_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
-
-    db["codes"][new_code] = {"used": False, "user": None}
-    save_json(DB_FILE, db)
-    backup_db()
-
-    await update.message.reply_text(f"CODE:\n{new_code}")
-
-# ---------------- OWNER CREDIT ----------------
-async def credit(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.from_user.id != OWNER_ID:
-        return
-
-    if len(context.args) < 2:
-        await update.message.reply_text("Use /credit <user_id> <amount>")
-        return
-
-    user_id = context.args[0]
-    amount = float(context.args[1])
-
-    user = get_user(user_id)
-    user["balance"] += amount
-
-    save_json(DB_FILE, db)
-    backup_db()
-
-    await update.message.reply_text(f"✅ Added ${amount}")
-
-# ---------------- ACTIVATE ----------------
-async def activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Use /activate <code>")
-        return
-
-    code_val = context.args[0]
-    user_id = str(update.message.from_user.id)
-
-    user = get_user(user_id)
-
-    if code_val not in db["codes"]:
-        await update.message.reply_text("❌ Invalid code")
-        return
-
-    if db["codes"][code_val]["used"]:
-        await update.message.reply_text("❌ Code already used")
-        return
-
-    db["codes"][code_val] = {"used": True, "user": user_id}
-    user["activated"] = True
-
-    save_json(DB_FILE, db)
-    backup_db()
-
-    await update.message.reply_text("🔥 Activated!")
-
-# ---------------- PHONE ----------------
-async def phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = get_user(update.message.from_user.id)
-    is_owner = update.message.from_user.id == OWNER_ID
-
-    if not user["activated"] and not is_owner:
-        await update.message.reply_text("🚫 Activate first")
-        return
-
-    if not context.args:
-        await update.message.reply_text("Use /phone <model>")
-        return
-
-    model = " ".join(context.args).lower()
-
-    if model not in phones:
-        await update.message.reply_text("❌ Not found")
-        return
-
-    data = phones[model]
-
-    if not isinstance(data, dict):
-        await update.message.reply_text("❌ Data error")
-        return
-
-    lines = len(data)
-    cost = lines * REQUEST_COST
-
-    # OWNER BYPASS PAYMENT
-    if not is_owner:
-        if user["balance"] < cost:
-            await update.message.reply_text(
-                f"💰 Need ${round(cost, 2)} but you have ${round(user['balance'], 2)}"
-            )
-            return
-
-        user["balance"] -= cost
-        save_json(DB_FILE, db)
-        backup_db()
-
-    text = f"📱 {model.upper()}\n\n"
-
-    for k, v in data.items():
-        text += f"{k}: {v}\n"
-
-    text += "\n💳 BTC:\n"
-    text += "bc1qh0jqcxkez9hu33u66y6j03dw60gdazuqzw9e6q\n"
-    text += "(Tap & hold to copy)\n"
-    text += "⚠️ Pay within 1 hour\n"
-
-    await update.message.reply_text(text)
-
-# ---------------- BUTTONS (FIXED) ----------------
-async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
 
     user = get_user(query.from_user.id)
 
-    if query.data == "activate":
-        await query.message.reply_text("Use /activate <code>")
+    lines = poem_lines(poem)
 
-    elif query.data == "balance":
-        await query.message.reply_text(f"💰 Balance: ${round(user['balance'], 2)}")
+    cost = lines * LINE_COST
 
-    elif query.data == "help":
+    if user["balance"] < cost:
+
         await query.message.reply_text(
-            "📦 SERVICE PLAN\n\n"
-            "🔓 Activation: FREE\n"
-            "💰 Price: $0.10 per line\n\n"
-            "💳 BTC ONLY:\n"
-            "bc1qh0jqcxkez9hu33u66y6j03dw60gdazuqzw9e6q\n"
-            "(Tap & hold to copy)\n\n"
-            "⚠️ Pay within 1 hour\n"
+
+            f"❌ You need {cost} credits.\n"
+            f"Current balance: {user['balance']}."
+
         )
 
-# ---------------- HANDLERS ----------------
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("help", help_cmd))
-application.add_handler(CommandHandler("balance", balance))
-application.add_handler(CommandHandler("activate", activate))
-application.add_handler(CommandHandler("code", code))
-application.add_handler(CommandHandler("credit", credit))
-application.add_handler(CommandHandler("phone", phone))
-application.add_handler(CommandHandler("myid", myid))
-application.add_handler(CommandHandler("support", support))
-application.add_handler(CallbackQueryHandler(buttons))
+        return
 
-# ---------------- STARTUP ----------------
+    user["balance"] -= cost
+
+    user["transactions"].append(
+
+        {
+
+            "date": datetime.now().strftime(
+                "%Y-%m-%d %H:%M"
+            ),
+
+            "category": category,
+
+            "lines": lines,
+
+            "cost": cost
+
+        }
+
+    )
+
+    save_json(DB_FILE, db)
+
+    backup_db()
+
+    await query.message.reply_text(
+
+        f"{poem}\n\n"
+
+        f"━━━━━━━━━━━━━━\n"
+
+        f"📝 Lines: {lines}\n"
+
+        f"💸 Charged: {cost} credits\n"
+
+        f"💰 Remaining: {user['balance']} credits"
+
+    )
+
+
+# =====================================================
+# /POETRY
+# =====================================================
+
+async def poetry(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    await update.message.reply_text(
+
+        "Choose a category.",
+
+        reply_markup=category_menu()
+
+    )
+
+
+# =====================================================
+# BUTTON HANDLER
+# =====================================================
+
+async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    query = update.callback_query
+
+    await query.answer()
+
+    if query.data == "menu_poem":
+
+        await query.message.reply_text(
+
+            "Choose a category.",
+
+            reply_markup=category_menu()
+
+        )
+
+    elif query.data == "menu_balance":
+
+        user = get_user(query.from_user.id)
+
+        await query.message.reply_text(
+
+            f"💰 Balance: {user['balance']} credits"
+
+        )
+
+    elif query.data == "menu_help":
+
+        await query.message.reply_text(
+
+            "📖 Commands\n\n"
+
+            "/poetry\n"
+
+            "/balance\n\n"
+
+            "1 credit = 1 line."
+
+        )
+
+    elif query.data in (
+
+        "love",
+
+        "sad",
+
+        "motivation",
+
+        "friendship"
+
+    ):
+
+        await send_poem(
+
+            query,
+
+            query.data
+
+        )
+# =====================================================
+# OWNER COMMANDS
+# =====================================================
+
+async def myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    await update.message.reply_text(
+        str(update.effective_user.id)
+    )
+
+
+async def credit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if update.effective_user.id != OWNER_ID:
+
+        await update.message.reply_text(
+            "❌ Owner only."
+        )
+
+        return
+
+    if len(context.args) != 2:
+
+        await update.message.reply_text(
+            "Usage:\n/credit <user_id> <credits>"
+        )
+
+        return
+
+    user_id = context.args[0]
+
+    try:
+
+        credits = int(context.args[1])
+
+    except ValueError:
+
+        await update.message.reply_text(
+            "Credits must be a number."
+        )
+
+        return
+
+    user = get_user(user_id)
+
+    user["balance"] += credits
+
+    save_json(DB_FILE, db)
+
+    backup_db()
+
+    await update.message.reply_text(
+
+        f"✅ Added {credits} credits.\n\n"
+        f"User: {user_id}\n"
+        f"Balance: {user['balance']}"
+
+    )
+
+# =====================================================
+# HANDLERS
+# =====================================================
+
+application.add_handler(
+    CommandHandler("start", start)
+)
+
+application.add_handler(
+    CommandHandler("help", help_cmd)
+)
+
+application.add_handler(
+    CommandHandler("balance", balance)
+)
+
+application.add_handler(
+    CommandHandler("poetry", poetry)
+)
+
+application.add_handler(
+    CommandHandler("credit", credit)
+)
+
+application.add_handler(
+    CommandHandler("myid", myid)
+)
+
+application.add_handler(
+    CallbackQueryHandler(buttons)
+)
+
+# =====================================================
+# STARTUP
+# =====================================================
+
 @app.on_event("startup")
 async def startup():
+
     await application.initialize()
+
     await application.start()
 
     if WEBHOOK_URL:
-        await application.bot.set_webhook(WEBHOOK_URL)
+
+        await application.bot.set_webhook(
+            WEBHOOK_URL
+        )
+
+
+# =====================================================
+# SHUTDOWN
+# =====================================================
 
 @app.on_event("shutdown")
 async def shutdown():
+
     await application.stop()
+
     await application.shutdown()
 
-# ---------------- WEBHOOK ----------------
+
+# =====================================================
+# WEBHOOK
+# =====================================================
+
 @app.post("/")
-async def webhook(req: Request):
-    data = await req.json()
-    update = Update.de_json(data, application.bot)
+async def webhook(request: Request):
+
+    data = await request.json()
+
+    update = Update.de_json(
+        data,
+        application.bot
+    )
+
     await application.process_update(update)
+
     return {"ok": True}
 
-# ---------------- HOME ----------------
+
+# =====================================================
+# HOME
+# =====================================================
+
 @app.get("/")
 async def home():
-    return {"status": "running"}
+
+    return {
+        "status": "running"
+    }
