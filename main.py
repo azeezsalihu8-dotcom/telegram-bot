@@ -349,7 +349,7 @@ async def send_poem(query, category):
 
         await query.message.reply_text(
 
-            "❌ No poems found in this category."
+            "❌ No bins found in this category."
 
         )
 
