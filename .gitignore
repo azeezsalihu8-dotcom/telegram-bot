@@ -1,0 +1,4 @@
+poetry_database.json
+backup_*.json
+__pycache__/
+*.pyc
