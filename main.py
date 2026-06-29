@@ -472,13 +472,13 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data in (
 
-        "Buy_Bin",
+        "love",
 
-        "Buy_Bin2",
+        "sad",
 
-        "Buy_Bin3",
+        "motivation",
 
-        "Buy_Bin4"
+        "friendship"
 
     ):
 
