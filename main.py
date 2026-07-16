@@ -73,21 +73,34 @@ application = (
 
 def get_user(user_id):
 
-    user = users.find_one(
-        {"user_id": str(user_id)}
-    )
+    try:
 
-    if user is None:
+        user = users.find_one(
+            {"user_id": str(user_id)}
+        )
 
-        user = {
+        if user is None:
+
+            user = {
+                "user_id": str(user_id),
+                "balance": 0,
+                "transactions": []
+            }
+
+            users.insert_one(user)
+
+        return user
+
+    except Exception as e:
+
+        logging.exception(e)
+
+        return {
             "user_id": str(user_id),
             "balance": 0,
             "transactions": []
         }
 
-        users.insert_one(user)
-
-    return user
 # =====================================================
 # POEM READER
 # =====================================================
