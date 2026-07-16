@@ -43,11 +43,8 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 OWNER_ID = 7874825323
 
 MONGODB_URI = os.getenv("MONGODB_URI")
-logging.info(f"MONGODB_URI exists: {MONGODB_URI is not None}")
-logging.info(f"Starts with: {MONGODB_URI[:20] if MONGODB_URI else 'None'}")
-
+logging.info(f"MONGODB_URI = {repr(MONGODB_URI)}")
 client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
-client.admin.command("ping")
 logging.info("MongoDB connected successfully!")
 
 db = client["poetry_bot"]
