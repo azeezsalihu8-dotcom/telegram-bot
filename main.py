@@ -22,6 +22,8 @@ from telegram.ext import (
     filters,
 )
 
+from pymongo import MongoClient
+
 # =====================================================
 # LOGGING
 # =====================================================
@@ -40,7 +42,14 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 OWNER_ID = 7874825323
 
-DB_FILE = "poetry_database.json"
+MONGODB_URI = os.getenv("MONGODB_URI")
+
+client = MongoClient(MONGODB_URI)
+
+db = client["poetry_bot"]
+users = db["users"]
+
+
 
 POEMS_FOLDER = "poems"
 
@@ -59,82 +68,26 @@ application = (
 )
 
 # =====================================================
-# DATABASE
-# =====================================================
-
-def backup_db():
-
-    try:
-
-        if os.path.exists(DB_FILE):
-
-            name = datetime.now().strftime(
-                "backup_%Y%m%d_%H%M%S.json"
-            )
-
-            shutil.copy(DB_FILE, name)
-
-    except Exception as e:
-
-        logging.error(e)
-
-
-def load_json(file, default):
-
-    if not os.path.exists(file):
-
-        return default
-
-    with open(file, "r", encoding="utf-8") as f:
-
-        return json.load(f)
-
-
-def save_json(file, data):
-
-    with open(file, "w", encoding="utf-8") as f:
-
-        json.dump(
-            data,
-            f,
-            indent=4
-        )
-
-
-db = load_json(
-
-    DB_FILE,
-
-    {
-
-        "users": {}
-
-    }
-
-)
-
-# =====================================================
 # USER
 # =====================================================
 
 def get_user(user_id):
 
-    user_id = str(user_id)
+    user = users.find_one(
+        {"user_id": str(user_id)}
+    )
 
-    if user_id not in db["users"]:
+    if user is None:
 
-        db["users"][user_id] = {
-
+        user = {
+            "user_id": str(user_id),
             "balance": 0,
-
             "transactions": []
-
         }
 
-        save_json(DB_FILE, db)
+        users.insert_one(user)
 
-    return db["users"][user_id]
-
+    return user
 # =====================================================
 # POEM READER
 # =====================================================
@@ -392,10 +345,15 @@ async def send_poem(query, category):
 
     )
 
-    save_json(DB_FILE, db)
-
-    backup_db()
-
+    users.update_one(
+    {"user_id": str(query.from_user.id)},
+    {
+        "$set": {
+            "balance": user["balance"],
+            "transactions": user["transactions"]
+        }
+    }
+)
     await query.message.reply_text(
 
         f"{poem}\n\n"
@@ -498,54 +456,44 @@ async def myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         str(update.effective_user.id)
     )
-
-
 async def credit(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if update.effective_user.id != OWNER_ID:
-
-        await update.message.reply_text(
-            "❌ Owner only."
-        )
-
+        await update.message.reply_text("❌ Owner only.")
         return
 
     if len(context.args) != 2:
-
         await update.message.reply_text(
             "Usage:\n/credit <user_id> <credits>"
         )
-
         return
 
     user_id = context.args[0]
 
     try:
-
         credits = int(context.args[1])
-
     except ValueError:
-
-        await update.message.reply_text(
-            "Credits must be a number."
-        )
-
+        await update.message.reply_text("Credits must be a number.")
         return
 
     user = get_user(user_id)
 
     user["balance"] += credits
 
-    save_json(DB_FILE, db)
-
-    backup_db()
+    users.update_one(
+        {"user_id": str(user_id)},
+        {
+            "$set": {
+                "balance": user["balance"],
+                "transactions": user["transactions"]
+            }
+        }
+    )
 
     await update.message.reply_text(
-
         f"✅ Added {credits} credits.\n\n"
         f"User: {user_id}\n"
         f"Balance: {user['balance']}"
-
     )
 
 # =====================================================
@@ -596,7 +544,6 @@ async def startup():
         await application.bot.set_webhook(
             WEBHOOK_URL
         )
-
 
 # =====================================================
 # SHUTDOWN
