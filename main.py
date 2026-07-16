@@ -203,22 +203,11 @@ def menu():
 # =====================================================
 # COMMANDS
 # =====================================================
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    get_user(update.effective_user.id)
+    logging.info("START COMMAND RECEIVED")
 
-    await update.message.reply_text(
-
-        "🎭 Welcome to the Cookie Bin Bot.\n\n"
-
-        "Every Bin is charged based on the number of lines.\n\n"
-
-        "Choose an option below.",
-
-        reply_markup=menu()
-
-    )
+    await update.message.reply_text("Bot is alive!")
 
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
